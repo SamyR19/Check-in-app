@@ -2,8 +2,12 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(Store.self) private var store
-    @State private var selectedTab: AppTab = .home
+    @State private var selectedTab: AppTab
     @State private var showCenterAction = false
+
+    init(initialTab: AppTab = .home) {
+        _selectedTab = State(initialValue: initialTab)
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {

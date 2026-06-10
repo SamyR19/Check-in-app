@@ -13,8 +13,15 @@ struct OnboardingFlow: View {
         case finishing
     }
 
-    @State private var role: UserRole = .teen
-    @State private var stepIndex = 0
+    @State private var role: UserRole
+    @State private var stepIndex: Int
+
+    init(initialRole: UserRole = .teen, initialStep: Step? = nil) {
+        _role = State(initialValue: initialRole)
+        let path = Self.path(for: initialRole)
+        let index = initialStep.flatMap { path.firstIndex(of: $0) } ?? 0
+        _stepIndex = State(initialValue: index)
+    }
 
     // Collected along the way, committed to the store at the end.
     @State private var name = ""
@@ -29,7 +36,7 @@ struct OnboardingFlow: View {
     @State private var inviteCodes: [InviteCode] = []
     @State private var pairingCode = ""
 
-    private var path: [Step] {
+    private static func path(for role: UserRole) -> [Step] {
         switch role {
         case .teen:
             [.welcome, .signUp, .role, .trip, .schedule, .permissions, .invite, .dryRun, .finishing]
@@ -37,6 +44,8 @@ struct OnboardingFlow: View {
             [.welcome, .signUp, .role, .pair, .expectations, .parentAlerts, .finishing]
         }
     }
+
+    private var path: [Step] { Self.path(for: role) }
 
     private var step: Step { path[min(stepIndex, path.count - 1)] }
 

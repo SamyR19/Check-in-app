@@ -1,0 +1,58 @@
+name: Screenshots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show available Xcode and simulators
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices available | head -40
+
+      - name: Run screenshot UI tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project CheckIn.xcodeproj \
+            -scheme CheckIn \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" | tail -200
+
+      - name: Export screenshots from result bundle
+        if: always()
+        run: |
+          mkdir -p exported
+          xcrun xcresulttool export attachments \
+            --path TestResults.xcresult \
+            --output-path exported
+          python3 scripts/collect_screenshots.py exported docs/screenshots
+          ls -la docs/screenshots
+
+      - name: Commit screenshots to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots || true
+          git commit -m "Add simulator screenshots [skip ci]" || echo "nothing to commit"
+          git pull --rebase origin "${GITHUB_REF_NAME}" || true
+          git push origin "HEAD:${GITHUB_REF_NAME}" || true
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: docs/screenshots
+          if-no-files-found: warn

@@ -10,3 +10,4 @@ xcuserdata/
 # SPM
 .build/
 .swiftpm/
+TestResults.xcresult
