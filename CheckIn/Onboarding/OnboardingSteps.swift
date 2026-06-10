@@ -1,8 +1,8 @@
 import SwiftUI
 
-// MARK: - Create your account
+// MARK: - Sign up (mock Supabase auth: email or Apple/Google)
 
-struct AccountStep: View {
+struct SignUpStep: View {
     @Binding var name: String
     @Binding var email: String
     @Binding var password: String
@@ -17,11 +17,30 @@ struct AccountStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 20) {
                     Text("Create your account")
                         .font(.display(30, weight: .bold))
                         .foregroundStyle(Theme.ink)
                         .padding(.top, 12)
+
+                    VStack(spacing: 10) {
+                        providerButton(icon: "apple.logo", title: "Continue with Apple",
+                                       foreground: .white, background: Theme.ink) {
+                            autofill(provider: "icloud.com")
+                        }
+                        providerButton(icon: "globe", title: "Continue with Google",
+                                       foreground: Theme.ink, background: Theme.surface) {
+                            autofill(provider: "gmail.com")
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        Rectangle().fill(Theme.ink.opacity(0.08)).frame(height: 1)
+                        Text("or")
+                            .font(.display(13, weight: .semibold))
+                            .foregroundStyle(Theme.inkSecondary)
+                        Rectangle().fill(Theme.ink.opacity(0.08)).frame(height: 1)
+                    }
 
                     LabeledField(label: "Email", placeholder: "you@example.com",
                                  text: $email, keyboard: .emailAddress)
@@ -37,119 +56,189 @@ struct AccountStep: View {
                 .padding(.bottom, 16)
         }
     }
+
+    private func providerButton(
+        icon: String, title: String, foreground: Color, background: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                Text(title)
+                    .font(.display(16, weight: .bold))
+            }
+            .foregroundStyle(foreground)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(background)
+                    .shadow(color: Theme.ink.opacity(0.06), radius: 8, y: 4)
+            )
+        }
+        .buttonStyle(SquishyButtonStyle(scale: 0.97))
+    }
+
+    /// Mock OAuth: fills the profile the way a provider callback would, then continues.
+    private func autofill(provider: String) {
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { name = "Sam Rivera" }
+        if email.isEmpty {
+            let handle = name.lowercased().replacingOccurrences(of: " ", with: ".")
+            email = "\(handle)@\(provider)"
+        }
+        if password.isEmpty { password = UUID().uuidString }
+        onContinue()
+    }
 }
 
-// MARK: - Your circle (who gets notified)
+// MARK: - Role
 
-struct CircleStep: View {
-    @Binding var parents: [ParentContact]
+struct RoleStep: View {
+    @Binding var role: UserRole
     var onContinue: () -> Void
 
-    @State private var newName = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Who are you?")
+                    .font(.display(30, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                Text("Tapped an invite link? Your role is set automatically — this is just in case.")
+                    .font(.display(15, weight: .medium))
+                    .foregroundStyle(Theme.inkSecondary)
+            }
+            .padding(.top, 12)
 
-    private let suggestions: [(String, String)] = [
-        ("Mom", "🌸"), ("Dad", "🧢"), ("Grandma", "🌷"), ("Uncle", "🎩"),
-    ]
+            roleCard(
+                .teen, emoji: "🎒", title: "I'm traveling",
+                detail: "Set the trip, check in on schedule, and invite your circle."
+            )
+            roleCard(
+                .parent, emoji: "🛡️", title: "I'm a parent or guardian",
+                detail: "Pair with your teen's trip and follow the live board."
+            )
+
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private func roleCard(_ value: UserRole, emoji: String, title: String, detail: String) -> some View {
+        Button {
+            Haptics.thump()
+            role = value
+            onContinue()
+        } label: {
+            HStack(spacing: 16) {
+                EmojiAvatar(emoji: emoji, size: 54,
+                            tint: value == .teen ? Theme.limeSoft : Theme.skySoft)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.display(18, weight: .bold))
+                        .foregroundStyle(Theme.ink)
+                    Text(detail)
+                        .font(.display(13, weight: .medium))
+                        .foregroundStyle(Theme.inkSecondary)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.inkSecondary)
+            }
+            .padding(18)
+            .card(cornerRadius: 26)
+        }
+        .buttonStyle(SquishyButtonStyle(scale: 0.97))
+    }
+}
+
+// MARK: - Create the trip
+
+struct TripStep: View {
+    @Binding var name: String
+    @Binding var destination: String
+    @Binding var emoji: String
+    @Binding var startDate: Date
+    @Binding var endDate: Date
+    var onContinue: () -> Void
+
+    private let emojis = ["🚂", "✈️", "🏝️", "⛰️", "🚐", "🛶"]
+
+    private var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+            && !destination.trimmingCharacters(in: .whitespaces).isEmpty
+            && endDate >= startDate
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Who's your circle?")
-                            .font(.display(30, weight: .bold))
-                            .foregroundStyle(Theme.ink)
-                        Text("They see your green board, get nudged if you miss a check-in, and receive SOS alerts.")
-                            .font(.display(15, weight: .medium))
-                            .foregroundStyle(Theme.inkSecondary)
-                    }
-                    .padding(.top, 12)
+                    Text("Create the trip")
+                        .font(.display(30, weight: .bold))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.top, 12)
 
-                    privacyChip
-
-                    VStack(spacing: 8) {
-                        ForEach(parents) { parent in
-                            HStack(spacing: 12) {
-                                EmojiAvatar(emoji: parent.emoji, size: 42)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(parent.name)
-                                        .font(.display(16, weight: .semibold))
-                                        .foregroundStyle(Theme.ink)
-                                    Text(parent.relation)
-                                        .font(.display(13, weight: .medium))
-                                        .foregroundStyle(Theme.inkSecondary)
+                    HStack(spacing: 8) {
+                        ForEach(emojis, id: \.self) { item in
+                            Button {
+                                Haptics.tap()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                    emoji = item
                                 }
-                                Spacer()
-                                Button {
-                                    Haptics.tap()
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                        parents.removeAll { $0.id == parent.id }
-                                    }
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(Theme.inkSecondary)
-                                        .frame(width: 28, height: 28)
-                                        .background(Circle().fill(Theme.canvas))
-                                }
-                                .buttonStyle(SquishyButtonStyle(scale: 0.8))
+                            } label: {
+                                Text(item)
+                                    .font(.system(size: 22))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 46)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                            .fill(emoji == item ? Theme.limeSoft : Theme.surface)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                                    .strokeBorder(emoji == item ? Theme.lime : .clear, lineWidth: 2)
+                                            )
+                                    )
                             }
-                            .padding(12)
-                            .card(cornerRadius: 20)
+                            .buttonStyle(SquishyButtonStyle(scale: 0.85))
                         }
                     }
 
-                    suggestionChips
+                    LabeledField(label: "Trip name", placeholder: "Iberia by rail", text: $name)
+                    LabeledField(label: "Destination", placeholder: "Portugal & Spain", text: $destination)
+
+                    VStack(spacing: 0) {
+                        datePickerRow(label: "Starts", selection: $startDate)
+                        Divider().padding(.leading, 16)
+                        datePickerRow(label: "Ends", selection: $endDate)
+                    }
+                    .card(cornerRadius: 22)
                 }
                 .padding(.horizontal, 24)
             }
 
-            PrimaryButton(title: "Continue", isEnabled: !parents.isEmpty, action: onContinue)
+            PrimaryButton(title: "Continue", isEnabled: isValid, action: onContinue)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
         }
     }
 
-    private var privacyChip: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "lock.fill")
-                .font(.system(size: 11, weight: .semibold))
-            Text("Stored on this device only")
-                .font(.display(13, weight: .semibold))
+    private func datePickerRow(label: String, selection: Binding<Date>) -> some View {
+        HStack {
+            Text(label)
+                .font(.display(15, weight: .semibold))
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            DatePicker("", selection: selection, displayedComponents: .date)
+                .labelsHidden()
         }
-        .foregroundStyle(Theme.sky)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Capsule().fill(Theme.skySoft.opacity(0.4)))
-    }
-
-    private var suggestionChips: some View {
-        HStack(spacing: 8) {
-            ForEach(suggestions.filter { suggestion in
-                !parents.contains { $0.name == suggestion.0 }
-            }, id: \.0) { suggestion in
-                Button {
-                    Haptics.tap()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                        parents.append(
-                            ParentContact(name: suggestion.0, relation: "Family", emoji: suggestion.1)
-                        )
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("\(suggestion.1) \(suggestion.0)")
-                            .font(.display(13, weight: .semibold))
-                    }
-                    .foregroundStyle(Theme.ink)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 9)
-                    .background(Capsule().fill(Theme.surface))
-                }
-                .buttonStyle(SquishyButtonStyle())
-            }
-        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 }
 
@@ -229,7 +318,7 @@ struct ScheduleStep: View {
     }
 }
 
-// MARK: - Permissions
+// MARK: - Permissions (prime first, then fire the OS prompt)
 
 struct PermissionsStep: View {
     @Environment(LocationService.self) private var location
@@ -242,10 +331,10 @@ struct PermissionsStep: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Two quick\npermissions")
+                        Text("Before iOS asks…")
                             .font(.display(30, weight: .bold))
                             .foregroundStyle(Theme.ink)
-                        Text("Location is attached only when you check in or press SOS — never tracked in the background.")
+                        Text("You'll see two system prompts next. Here's exactly what each one is for — no surprises, no background tracking.")
                             .font(.display(15, weight: .medium))
                             .foregroundStyle(Theme.inkSecondary)
                     }
@@ -253,8 +342,8 @@ struct PermissionsStep: View {
 
                     permissionCard(
                         emoji: "📍",
-                        title: "Location",
-                        detail: "Stamped onto each check-in so your circle sees where you are.",
+                        title: "Location — only when you act",
+                        detail: "Stamped onto check-ins and SOS, the moment you tap. Never silently, never 24/7.",
                         granted: location.isAuthorized,
                         buttonTitle: location.isAuthorized ? "Allowed" : "Allow"
                     ) {

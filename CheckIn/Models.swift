@@ -3,12 +3,74 @@ import CoreLocation
 
 // MARK: - Domain models (all Codable for local persistence)
 
+enum UserRole: String, Codable {
+    case teen, parent
+}
+
 struct UserProfile: Codable, Equatable {
     var name: String
     var email: String
 
     var initials: String {
         name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
+    }
+}
+
+struct Trip: Codable, Equatable {
+    var name: String
+    var destination: String
+    var emoji: String
+    var startDate: Date
+    var endDate: Date
+
+    var dateRangeString: String {
+        let start = startDate.formatted(.dateTime.month(.abbreviated).day())
+        let end = endDate.formatted(.dateTime.month(.abbreviated).day())
+        return "\(start) – \(end)"
+    }
+}
+
+enum InviteAudience: String, Codable {
+    case friends, parents
+
+    var title: String {
+        switch self {
+        case .friends: "Travel friends"
+        case .parents: "Parents & guardians"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .friends: "🎒"
+        case .parents: "🛡️"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .friends: "They join the trip and check in too"
+        case .parents: "They follow the board and get escalations"
+        }
+    }
+}
+
+struct InviteCode: Codable, Identifiable {
+    var id = UUID()
+    var code: String
+    var audience: InviteAudience
+    var expiresAt: Date
+
+    /// Short-lived, human-typeable, tied to the trip. No ambiguous chars.
+    static func generate(for audience: InviteAudience) -> InviteCode {
+        let alphabet = Array("ABCDEFGHJKMNPQRSTUVWXYZ23456789")
+        let code = String((0..<6).map { _ in alphabet.randomElement()! })
+        return InviteCode(code: code, audience: audience, expiresAt: .now.addingTimeInterval(24 * 3600))
+    }
+
+    var displayCode: String {
+        let half = code.count / 2
+        return "\(code.prefix(half))-\(code.suffix(code.count - half))"
     }
 }
 
@@ -54,11 +116,6 @@ struct CheckInRecord: Codable, Identifiable {
         guard let latitude, let longitude else { return nil }
         return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
-
-    var coordinateString: String {
-        guard let latitude, let longitude else { return "No location" }
-        return String(format: "%.4f, %.4f", latitude, longitude)
-    }
 }
 
 struct ItineraryStop: Codable, Identifiable {
@@ -91,6 +148,7 @@ struct FamilyMember: Codable, Identifiable {
     var lastSeenMinutes: Int
     var status: MemberStatus
     var isMe: Bool
+    var isTraveling: Bool
 
     var lastSeenString: String {
         lastSeenMinutes <= 1 ? "now" : "\(lastSeenMinutes)m ago"
@@ -140,6 +198,14 @@ enum Seed {
         ScheduledCheckIn(label: "Evening", hour: 21, minute: 0, isEnabled: true),
     ]
 
+    static var defaultTrip: Trip {
+        let calendar = Calendar.current
+        let start = calendar.date(byAdding: .day, value: -3, to: .now) ?? .now
+        let end = calendar.date(byAdding: .day, value: 15, to: .now) ?? .now
+        return Trip(name: "Iberia by rail", destination: "Portugal & Spain",
+                    emoji: "🚂", startDate: start, endDate: end)
+    }
+
     static let stops: [ItineraryStop] = [
         ItineraryStop(city: "Lisbon", country: "Portugal", emoji: "🚋", dates: "Jun 7 – 12", isCurrent: true),
         ItineraryStop(city: "Seville", country: "Spain", emoji: "🍊", dates: "Jun 12 – 16", isCurrent: false),
@@ -153,14 +219,35 @@ enum Seed {
         Expense(title: "Tram day pass", emoji: "🚋", amount: 6.8, date: .now.addingTimeInterval(-3600 * 5)),
     ]
 
-    static func family(meName: String) -> [FamilyMember] {
+    /// The group, teen's perspective: 3 teens traveling + their parents on one board.
+    static func familyAsTeen(meName: String) -> [FamilyMember] {
         [
             FamilyMember(name: meName, emoji: "🎒", role: "Traveling", battery: 100,
-                         lastSeenMinutes: 0, status: .good, isMe: true),
-            FamilyMember(name: "Mom", emoji: "🌸", role: "Home", battery: 64,
-                         lastSeenMinutes: 4, status: .good, isMe: false),
-            FamilyMember(name: "Dad", emoji: "🧢", role: "Home", battery: 41,
-                         lastSeenMinutes: 18, status: .good, isMe: false),
+                         lastSeenMinutes: 0, status: .good, isMe: true, isTraveling: true),
+            FamilyMember(name: "Maya", emoji: "🦊", role: "Traveling", battery: 72,
+                         lastSeenMinutes: 9, status: .good, isMe: false, isTraveling: true),
+            FamilyMember(name: "Jonas", emoji: "🐻", role: "Traveling", battery: 35,
+                         lastSeenMinutes: 26, status: .good, isMe: false, isTraveling: true),
+            FamilyMember(name: "Mom", emoji: "🌸", role: "Watching the board", battery: 64,
+                         lastSeenMinutes: 4, status: .good, isMe: false, isTraveling: false),
+            FamilyMember(name: "Dad", emoji: "🧢", role: "Watching the board", battery: 41,
+                         lastSeenMinutes: 18, status: .good, isMe: false, isTraveling: false),
+        ]
+    }
+
+    /// The same group, parent's perspective: their kid + the two friends, plus guardians.
+    static func familyAsParent(meName: String) -> [FamilyMember] {
+        [
+            FamilyMember(name: "Sam", emoji: "🎒", role: "Your teen · traveling", battery: 81,
+                         lastSeenMinutes: 3, status: .good, isMe: false, isTraveling: true),
+            FamilyMember(name: "Maya", emoji: "🦊", role: "Traveling", battery: 72,
+                         lastSeenMinutes: 9, status: .good, isMe: false, isTraveling: true),
+            FamilyMember(name: "Jonas", emoji: "🐻", role: "Traveling", battery: 35,
+                         lastSeenMinutes: 26, status: .good, isMe: false, isTraveling: true),
+            FamilyMember(name: meName, emoji: "🛡️", role: "Watching the board", battery: 100,
+                         lastSeenMinutes: 0, status: .good, isMe: true, isTraveling: false),
+            FamilyMember(name: "Mom", emoji: "🌸", role: "Watching the board", battery: 64,
+                         lastSeenMinutes: 4, status: .good, isMe: false, isTraveling: false),
         ]
     }
 

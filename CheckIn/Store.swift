@@ -7,7 +7,10 @@ import Observation
 @Observable
 final class Store {
     var hasOnboarded = false
+    var role: UserRole = .teen
     var profile = UserProfile(name: "", email: "")
+    var trip: Trip?
+    var inviteCodes: [InviteCode] = []
     var parents: [ParentContact] = []
     var schedule: [ScheduledCheckIn] = []
     var records: [CheckInRecord] = []
@@ -19,12 +22,16 @@ final class Store {
     var events: [ActivityEvent] = []
     var recentSearches: [String] = []
     var streakDays = 5
+    /// Parent only: show the "send a test ping" prompt until they've done it.
+    var needsTestPing = false
 
     init() {
         load()
     }
 
     // MARK: - Derived state
+
+    var isParent: Bool { role == .parent }
 
     var currentStop: ItineraryStop? { stops.first(where: \.isCurrent) }
 
@@ -33,6 +40,11 @@ final class Store {
     var spentTotal: Double { expenses.reduce(0) { $0 + $1.amount } }
 
     var pendingPing: PingRequest? { pings.first(where: { !$0.isApproved }) }
+
+    var teens: [FamilyMember] { family.filter(\.isTraveling) }
+    var guardians: [FamilyMember] { family.filter { !$0.isTraveling } }
+    /// Parent's primary teen (first traveler on the board).
+    var primaryTeen: FamilyMember? { teens.first }
 
     /// The most recent slot today whose time has passed without a confirmation.
     var dueSlot: ScheduledCheckIn? {
@@ -59,7 +71,6 @@ final class Store {
             }
             .min(by: { $0.1 < $1.1 })
         if let upcoming { return upcoming }
-        // Tomorrow's earliest slot
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
         return enabled
             .compactMap { slot -> (ScheduledCheckIn, Date)? in
@@ -76,16 +87,49 @@ final class Store {
         return h > 0 ? "in \(h)h \(m)m" : "in \(m)m"
     }
 
-    // MARK: - Mutations
+    // MARK: - Onboarding completion
 
-    func completeOnboarding(profile: UserProfile, parents: [ParentContact], schedule: [ScheduledCheckIn]) {
+    func completeTeenOnboarding(
+        profile: UserProfile, trip: Trip,
+        schedule: [ScheduledCheckIn], inviteCodes: [InviteCode]
+    ) {
+        role = .teen
         self.profile = profile
-        self.parents = parents
+        self.trip = trip
         self.schedule = schedule
-        self.family = Seed.family(meName: profile.name.split(separator: " ").first.map(String.init) ?? profile.name)
+        self.inviteCodes = inviteCodes
+        parents = Seed.parents
+        let firstName = profile.name.split(separator: " ").first.map(String.init) ?? profile.name
+        family = Seed.familyAsTeen(meName: firstName)
+        events.insert(
+            ActivityEvent(kind: .checkIn, title: "Dry run complete",
+                          detail: "Test check-in + ping worked — you're trip-ready", date: .now),
+            at: 0
+        )
         hasOnboarded = true
         save()
     }
+
+    func completeParentOnboarding(profile: UserProfile, pairingCode: String) {
+        role = .parent
+        self.profile = profile
+        trip = Seed.defaultTrip
+        schedule = Seed.schedule
+        parents = []
+        pings = []
+        let firstName = profile.name.split(separator: " ").first.map(String.init) ?? profile.name
+        family = Seed.familyAsParent(meName: firstName)
+        events.insert(
+            ActivityEvent(kind: .ping, title: "Linked to “\(trip?.name ?? "the trip")”",
+                          detail: "Code \(pairingCode) · you now follow the board", date: .now),
+            at: 0
+        )
+        needsTestPing = true
+        hasOnboarded = true
+        save()
+    }
+
+    // MARK: - Teen actions
 
     func checkIn(coordinate: CLLocationCoordinate2D?, battery: Int, mood: String, note: String) {
         let wasDue = dueSlot != nil
@@ -136,11 +180,6 @@ final class Store {
         save()
     }
 
-    func addExpense(title: String, emoji: String, amount: Double) {
-        expenses.insert(Expense(title: title, emoji: emoji, amount: amount, date: .now), at: 0)
-        save()
-    }
-
     func triggerSOS(coordinate: CLLocationCoordinate2D?) {
         let location = coordinate.map { String(format: "%.4f, %.4f", $0.latitude, $0.longitude) } ?? "location unavailable"
         events.insert(
@@ -148,6 +187,39 @@ final class Store {
                           detail: "📍 \(location)", date: .now),
             at: 0
         )
+        save()
+    }
+
+    // MARK: - Parent actions
+
+    func requestPing(to teenName: String, isTest: Bool) {
+        events.insert(
+            ActivityEvent(kind: .ping,
+                          title: "\(isTest ? "Test ping" : "Ping") sent to \(teenName)",
+                          detail: "Waiting for their one-tap approval", date: .now),
+            at: 0
+        )
+        save()
+    }
+
+    func completePing(to teenName: String) {
+        events.insert(
+            ActivityEvent(kind: .ping, title: "\(teenName) shared location",
+                          detail: "📍 38.7223, -9.1393 · approved in 1 tap", date: .now),
+            at: 0
+        )
+        if let index = family.firstIndex(where: { $0.name == teenName }) {
+            family[index].lastSeenMinutes = 0
+            family[index].status = .good
+        }
+        needsTestPing = false
+        save()
+    }
+
+    // MARK: - Shared actions
+
+    func addExpense(title: String, emoji: String, amount: Double) {
+        expenses.insert(Expense(title: title, emoji: emoji, amount: amount, date: .now), at: 0)
         save()
     }
 
@@ -169,9 +241,13 @@ final class Store {
     func reset() {
         try? FileManager.default.removeItem(at: Self.fileURL)
         hasOnboarded = false
+        role = .teen
         profile = UserProfile(name: "", email: "")
+        trip = nil
+        inviteCodes = []
         parents = []
         schedule = []
+        needsTestPing = false
         seedDemoContent()
     }
 
@@ -179,7 +255,10 @@ final class Store {
 
     private struct Snapshot: Codable {
         var hasOnboarded: Bool
+        var role: UserRole
         var profile: UserProfile
+        var trip: Trip?
+        var inviteCodes: [InviteCode]
         var parents: [ParentContact]
         var schedule: [ScheduledCheckIn]
         var records: [CheckInRecord]
@@ -191,6 +270,7 @@ final class Store {
         var events: [ActivityEvent]
         var recentSearches: [String]
         var streakDays: Int
+        var needsTestPing: Bool
     }
 
     private static let fileURL = FileManager.default
@@ -199,10 +279,12 @@ final class Store {
 
     func save() {
         let snapshot = Snapshot(
-            hasOnboarded: hasOnboarded, profile: profile, parents: parents,
-            schedule: schedule, records: records, stops: stops, expenses: expenses,
-            budget: budget, family: family, pings: pings, events: events,
-            recentSearches: recentSearches, streakDays: streakDays
+            hasOnboarded: hasOnboarded, role: role, profile: profile, trip: trip,
+            inviteCodes: inviteCodes, parents: parents, schedule: schedule,
+            records: records, stops: stops, expenses: expenses, budget: budget,
+            family: family, pings: pings, events: events,
+            recentSearches: recentSearches, streakDays: streakDays,
+            needsTestPing: needsTestPing
         )
         if let data = try? JSONEncoder().encode(snapshot) {
             try? data.write(to: Self.fileURL, options: .atomic)
@@ -216,7 +298,10 @@ final class Store {
             return
         }
         hasOnboarded = snapshot.hasOnboarded
+        role = snapshot.role
         profile = snapshot.profile
+        trip = snapshot.trip
+        inviteCodes = snapshot.inviteCodes
         parents = snapshot.parents
         schedule = snapshot.schedule
         records = snapshot.records
@@ -228,13 +313,14 @@ final class Store {
         events = snapshot.events
         recentSearches = snapshot.recentSearches
         streakDays = snapshot.streakDays
+        needsTestPing = snapshot.needsTestPing
     }
 
     private func seedDemoContent() {
         records = Seed.records
         stops = Seed.stops
         expenses = Seed.expenses
-        family = Seed.family(meName: "You")
+        family = Seed.familyAsTeen(meName: "You")
         pings = Seed.pings
         events = Seed.events
         recentSearches = []

@@ -12,12 +12,18 @@ struct ProfileView: View {
                     .appearStagger(0)
                 statsRow
                     .appearStagger(1)
-                scheduleSection
-                    .appearStagger(2)
-                circleSection
-                    .appearStagger(3)
+                if !store.isParent {
+                    scheduleSection
+                        .appearStagger(2)
+                    inviteSection
+                        .appearStagger(3)
+                }
+                if !store.parents.isEmpty {
+                    circleSection
+                        .appearStagger(4)
+                }
                 settingsSection
-                    .appearStagger(4)
+                    .appearStagger(5)
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
@@ -60,13 +66,19 @@ struct ProfileView: View {
                     )
             }
 
-            VStack(spacing: 3) {
+            VStack(spacing: 5) {
                 Text(store.profile.name)
                     .font(.display(24, weight: .bold))
                     .foregroundStyle(Theme.ink)
                 Text(store.profile.email)
                     .font(.display(14, weight: .medium))
                     .foregroundStyle(Theme.inkSecondary)
+                Text(store.isParent ? "🛡️ Parent · watching the board" : "🎒 Traveler")
+                    .font(.display(12, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(store.isParent ? Theme.skySoft : Theme.limeSoft))
             }
         }
         .frame(maxWidth: .infinity)
@@ -138,6 +150,54 @@ struct ProfileView: View {
                 }
             }
             .card(cornerRadius: 24)
+        }
+    }
+
+    @State private var copiedID: UUID?
+
+    private var inviteSection: some View {
+        Group {
+            if !store.inviteCodes.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionHeader(title: "Trip invites", trailing: "expire in 24h")
+                    VStack(spacing: 10) {
+                        ForEach(store.inviteCodes) { invite in
+                            HStack(spacing: 12) {
+                                EmojiAvatar(emoji: invite.audience.emoji, size: 42,
+                                            tint: invite.audience == .friends ? Theme.limeSoft : Theme.skySoft)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(invite.audience.title)
+                                        .font(.display(14, weight: .semibold))
+                                        .foregroundStyle(Theme.ink)
+                                    Text(invite.displayCode)
+                                        .font(.system(size: 15, weight: .heavy, design: .monospaced))
+                                        .foregroundStyle(Theme.inkSecondary)
+                                }
+                                Spacer()
+                                Button {
+                                    Haptics.success()
+                                    UIPasteboard.general.string = invite.code
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                        copiedID = invite.id
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                                        withAnimation { copiedID = nil }
+                                    }
+                                } label: {
+                                    Image(systemName: copiedID == invite.id ? "checkmark" : "doc.on.doc")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(copiedID == invite.id ? Theme.ink : .white)
+                                        .frame(width: 36, height: 36)
+                                        .background(Circle().fill(copiedID == invite.id ? Theme.lime : Theme.ink))
+                                }
+                                .buttonStyle(SquishyButtonStyle(scale: 0.85))
+                            }
+                            .padding(12)
+                            .card(cornerRadius: 22)
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -1,33 +1,47 @@
 import SwiftUI
 
-/// Multi-step onboarding: welcome → account → circle → schedule → permissions → finishing.
-/// Top progress bar + back chevron styled after the reference screenshots.
+/// Role-branched onboarding.
+/// Teen:   welcome → sign up → role → trip → schedule → permissions (primed) → invites → dry run → finishing
+/// Parent: welcome → sign up → role → pairing code → expectations → alerts (primed) → finishing
 struct OnboardingFlow: View {
     @Environment(Store.self) private var store
 
-    enum Step: Int, CaseIterable {
-        case welcome, account, circle, schedule, permissions, finishing
+    enum Step: Hashable {
+        case welcome, signUp, role
+        case trip, schedule, permissions, invite, dryRun
+        case pair, expectations, parentAlerts
+        case finishing
     }
 
-    @State private var step: Step = .welcome
+    @State private var role: UserRole = .teen
+    @State private var stepIndex = 0
 
     // Collected along the way, committed to the store at the end.
     @State private var name = ""
     @State private var email = ""
     @State private var password = ""
-    @State private var parents: [ParentContact] = Seed.parents
+    @State private var tripName = ""
+    @State private var tripDestination = ""
+    @State private var tripEmoji = "🚂"
+    @State private var tripStart = Date.now
+    @State private var tripEnd = Calendar.current.date(byAdding: .day, value: 14, to: .now) ?? .now
     @State private var schedule: [ScheduledCheckIn] = Seed.schedule
+    @State private var inviteCodes: [InviteCode] = []
+    @State private var pairingCode = ""
+
+    private var path: [Step] {
+        switch role {
+        case .teen:
+            [.welcome, .signUp, .role, .trip, .schedule, .permissions, .invite, .dryRun, .finishing]
+        case .parent:
+            [.welcome, .signUp, .role, .pair, .expectations, .parentAlerts, .finishing]
+        }
+    }
+
+    private var step: Step { path[min(stepIndex, path.count - 1)] }
 
     private var progress: CGFloat {
-        // Welcome doesn't count; finishing shows full.
-        switch step {
-        case .welcome: 0
-        case .account: 0.25
-        case .circle: 0.5
-        case .schedule: 0.75
-        case .permissions: 0.92
-        case .finishing: 1
-        }
+        CGFloat(stepIndex) / CGFloat(path.count - 1)
     }
 
     var body: some View {
@@ -43,25 +57,32 @@ struct OnboardingFlow: View {
                 Group {
                     switch step {
                     case .welcome:
-                        WelcomeStep { advance(to: .account) }
-                    case .account:
-                        AccountStep(name: $name, email: $email, password: $password) {
-                            advance(to: .circle)
-                        }
-                    case .circle:
-                        CircleStep(parents: $parents) { advance(to: .schedule) }
+                        WelcomeStep { advance() }
+                    case .signUp:
+                        SignUpStep(name: $name, email: $email, password: $password) { advance() }
+                    case .role:
+                        RoleStep(role: $role) { advance() }
+                    case .trip:
+                        TripStep(
+                            name: $tripName, destination: $tripDestination,
+                            emoji: $tripEmoji, startDate: $tripStart, endDate: $tripEnd
+                        ) { advance() }
                     case .schedule:
-                        ScheduleStep(schedule: $schedule) { advance(to: .permissions) }
+                        ScheduleStep(schedule: $schedule) { advance() }
                     case .permissions:
-                        PermissionsStep { advance(to: .finishing) }
+                        PermissionsStep { advance() }
+                    case .invite:
+                        InviteStep(codes: $inviteCodes, tripName: tripName) { advance() }
+                    case .dryRun:
+                        DryRunStep { advance() }
+                    case .pair:
+                        PairStep(code: $pairingCode) { advance() }
+                    case .expectations:
+                        ExpectationsStep { advance() }
+                    case .parentAlerts:
+                        ParentAlertsStep { advance() }
                     case .finishing:
-                        FinishingStep {
-                            store.completeOnboarding(
-                                profile: UserProfile(name: name, email: email),
-                                parents: parents,
-                                schedule: schedule
-                            )
-                        }
+                        FinishingStep(role: role) { finish() }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -103,16 +124,33 @@ struct OnboardingFlow: View {
         .padding(.bottom, 14)
     }
 
-    private func advance(to next: Step) {
+    private func advance() {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-            step = next
+            stepIndex = min(stepIndex + 1, path.count - 1)
         }
     }
 
     private func goBack() {
-        guard let previous = Step(rawValue: step.rawValue - 1) else { return }
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-            step = previous
+            stepIndex = max(stepIndex - 1, 0)
+        }
+    }
+
+    private func finish() {
+        switch role {
+        case .teen:
+            store.completeTeenOnboarding(
+                profile: UserProfile(name: name, email: email),
+                trip: Trip(name: tripName, destination: tripDestination, emoji: tripEmoji,
+                           startDate: tripStart, endDate: tripEnd),
+                schedule: schedule,
+                inviteCodes: inviteCodes
+            )
+        case .parent:
+            store.completeParentOnboarding(
+                profile: UserProfile(name: name, email: email),
+                pairingCode: pairingCode
+            )
         }
     }
 }
@@ -130,7 +168,6 @@ private struct WelcomeStep: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tilted card grid, like the welcome-screen reference.
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
                 ForEach(Array(cards.enumerated()), id: \.offset) { index, card in
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -170,7 +207,7 @@ private struct WelcomeStep: View {
                     Haptics.tap()
                     onContinue()
                 } label: {
-                    Text("I already have an account")
+                    Text("I have an invite link or code")
                         .font(.display(15, weight: .semibold))
                         .foregroundStyle(Theme.ink)
                         .frame(maxWidth: .infinity)
@@ -190,16 +227,28 @@ private struct WelcomeStep: View {
 // MARK: - Finishing setup
 
 private struct FinishingStep: View {
+    let role: UserRole
     var onDone: () -> Void
 
     @State private var spinning = false
     @State private var shownBullets = 0
 
-    private let bullets: [(String, String)] = [
-        ("lock", "Your data is fully private"),
-        ("iphone", "Everything stays on this device"),
-        ("clock.badge.checkmark", "Your check-ins are ready"),
-    ]
+    private var bullets: [(String, String)] {
+        switch role {
+        case .teen:
+            [
+                ("lock", "Your data is fully private"),
+                ("iphone", "Everything stays on this device"),
+                ("clock.badge.checkmark", "Your check-ins are ready"),
+            ]
+        case .parent:
+            [
+                ("lock", "You see proof, never raw tracking"),
+                ("bell.badge", "Escalations reach you instantly"),
+                ("person.2.fill", "The board is live"),
+            ]
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {

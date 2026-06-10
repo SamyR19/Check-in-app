@@ -5,9 +5,9 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    func title(for role: UserRole) -> String {
         switch self {
-        case .home: "Home"
+        case .home: role == .parent ? "Board" : "Home"
         case .plan: "Trip"
         case .activity: "Activity"
         case .profile: "Profile"
@@ -33,10 +33,11 @@ enum AppTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Floating pill tab bar with a sliding lime highlight and a center
-/// "I'm good" check-in button that pulses when a check-in is due.
+/// Floating pill tab bar with a sliding lime highlight. The center button is
+/// role-aware: teens get "I'm good" (pulses amber when due), parents get Ping.
 struct FloatingTabBar: View {
     @Binding var selection: AppTab
+    var role: UserRole = .teen
     var isCheckInDue: Bool
     var onCheckIn: () -> Void
 
@@ -79,7 +80,7 @@ struct FloatingTabBar: View {
                 Image(systemName: isSelected ? tab.selectedIcon : tab.icon)
                     .font(.system(size: 17, weight: .semibold))
                     .symbolEffect(.bounce, value: isSelected)
-                Text(tab.title)
+                Text(tab.title(for: role))
                     .font(.display(10, weight: .semibold))
             }
             .foregroundStyle(isSelected ? Theme.ink : Theme.inkSecondary)
@@ -97,12 +98,13 @@ struct FloatingTabBar: View {
     }
 
     private var checkInButton: some View {
-        Button {
+        let isDue = role == .teen && isCheckInDue
+        return Button {
             Haptics.thump()
             onCheckIn()
         } label: {
             ZStack {
-                if isCheckInDue {
+                if isDue {
                     Circle()
                         .stroke(Theme.amber.opacity(0.55), lineWidth: 3)
                         .frame(width: 52, height: 52)
@@ -113,19 +115,19 @@ struct FloatingTabBar: View {
                             value: duePulse
                         )
                 }
-                Image(systemName: "checkmark")
+                Image(systemName: role == .parent ? "location.fill" : "checkmark")
                     .font(.system(size: 19, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(width: 52, height: 52)
                     .background(
                         Circle()
-                            .fill(isCheckInDue ? Theme.amber : Theme.ink)
-                            .shadow(color: (isCheckInDue ? Theme.amber : Theme.ink).opacity(0.35), radius: 10, y: 5)
+                            .fill(isDue ? Theme.amber : Theme.ink)
+                            .shadow(color: (isDue ? Theme.amber : Theme.ink).opacity(0.35), radius: 10, y: 5)
                     )
             }
         }
         .buttonStyle(SquishyButtonStyle(scale: 0.88))
-        .accessibilityLabel("Check in — I'm good")
+        .accessibilityLabel(role == .parent ? "Request location" : "Check in — I'm good")
     }
 }
 

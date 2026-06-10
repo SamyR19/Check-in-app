@@ -20,8 +20,10 @@ struct ActivityView: View {
             VStack(alignment: .leading, spacing: 24) {
                 header
                     .appearStagger(0)
-                recapComposer
-                    .appearStagger(1)
+                if !store.isParent {
+                    recapComposer
+                        .appearStagger(1)
+                }
                 if !todayEvents.isEmpty {
                     feedSection(title: "Today", events: todayEvents, startIndex: 2)
                 }

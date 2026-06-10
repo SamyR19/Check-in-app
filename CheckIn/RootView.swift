@@ -3,7 +3,7 @@ import SwiftUI
 struct RootView: View {
     @Environment(Store.self) private var store
     @State private var selectedTab: AppTab = .home
-    @State private var showCheckIn = false
+    @State private var showCenterAction = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -11,7 +11,12 @@ struct RootView: View {
 
             Group {
                 switch selectedTab {
-                case .home: HomeView()
+                case .home:
+                    if store.isParent {
+                        ParentHomeView()
+                    } else {
+                        HomeView()
+                    }
                 case .plan: PlanView()
                 case .activity: ActivityView()
                 case .profile: ProfileView()
@@ -21,15 +26,25 @@ struct RootView: View {
             .transition(.opacity.combined(with: .scale(scale: 0.985)))
             .id(selectedTab)
 
-            FloatingTabBar(selection: $selectedTab, isCheckInDue: store.dueSlot != nil) {
-                showCheckIn = true
+            FloatingTabBar(
+                selection: $selectedTab,
+                role: store.role,
+                isCheckInDue: store.dueSlot != nil
+            ) {
+                showCenterAction = true
             }
             .padding(.bottom, 4)
         }
-        .sheet(isPresented: $showCheckIn) {
-            CheckInSheet()
-                .presentationDetents([.large])
-                .presentationCornerRadius(32)
+        .sheet(isPresented: $showCenterAction) {
+            Group {
+                if store.isParent {
+                    PingSheet()
+                } else {
+                    CheckInSheet()
+                }
+            }
+            .presentationDetents([.large])
+            .presentationCornerRadius(32)
         }
     }
 }

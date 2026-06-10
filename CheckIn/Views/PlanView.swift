@@ -37,15 +37,16 @@ struct PlanView: View {
     }
 
     private var tripHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("SUMMER TRIP")
+        let trip = store.trip ?? Seed.defaultTrip
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(trip.destination.uppercased())
                 .font(.display(10, weight: .heavy))
                 .foregroundStyle(Theme.ink.opacity(0.5))
                 .kerning(1.2)
-            Text("Iberia by rail 🚂")
+            Text("\(trip.name) \(trip.emoji)")
                 .font(.display(24, weight: .bold))
                 .foregroundStyle(Theme.ink)
-            Text("Jun 7 – 25 · \(store.stops.count) cities")
+            Text("\(trip.dateRangeString) · \(store.stops.count) cities")
                 .font(.display(13, weight: .semibold))
                 .foregroundStyle(Theme.ink.opacity(0.65))
         }
