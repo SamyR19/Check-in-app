@@ -43,7 +43,8 @@ def main():
     copied = 0
     for exported, name in pairs:
         source = os.path.join(src, exported)
-        if not os.path.exists(source):
+        # Screenshots only — skip the automatic screen recordings (.mp4).
+        if not os.path.exists(source) or not exported.lower().endswith(".png"):
             continue
         base = os.path.splitext(name)[0]
         safe = "".join(c if (c.isalnum() or c in "-_") else "-" for c in base)

@@ -25,9 +25,7 @@ jobs:
             -project CheckIn.xcodeproj \
             -scheme CheckIn \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
-            -resultBundlePath TestResults.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" | tail -200
+            -resultBundlePath TestResults.xcresult | tail -200
 
       - name: Export screenshots from result bundle
         if: always()
