@@ -31,6 +31,12 @@ enum Theme {
     static let skySoft = Color(hex: 0xBFE0FF)
     /// Warm coral for streaks and alerts.
     static let coral = Color(hex: 0xFF6B4A)
+    /// Amber for "check-in due" states.
+    static let amber = Color(hex: 0xF5A623)
+    static let amberSoft = Color(hex: 0xFCEBC8)
+    /// True red, reserved for SOS.
+    static let danger = Color(hex: 0xE5483D)
+    static let dangerSoft = Color(hex: 0xFADAD7)
 
     static let skyGradient = LinearGradient(
         colors: [Color(hex: 0x9ED2FF), Color(hex: 0x2E8CFF)],

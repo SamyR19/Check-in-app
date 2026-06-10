@@ -1,161 +1,186 @@
 import Foundation
 import CoreLocation
-import SwiftUI
 
-// MARK: - Models
+// MARK: - Domain models (all Codable for local persistence)
 
-enum SpotCategory: String, CaseIterable, Identifiable {
-    case all = "All"
-    case coffee = "Coffee"
-    case food = "Food"
-    case bars = "Bars"
-    case parks = "Parks"
-    case music = "Music"
+struct UserProfile: Codable, Equatable {
+    var name: String
+    var email: String
 
-    var id: String { rawValue }
+    var initials: String {
+        name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
+    }
+}
+
+struct ParentContact: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var relation: String
+    var emoji: String
+}
+
+struct ScheduledCheckIn: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var label: String
+    var hour: Int
+    var minute: Int
+    var isEnabled: Bool
+
+    func dateToday(_ calendar: Calendar = .current, base: Date = .now) -> Date? {
+        calendar.date(bySettingHour: hour, minute: minute, second: 0, of: base)
+    }
+
+    var timeString: String {
+        guard let date = dateToday() else { return "--:--" }
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+}
+
+enum CheckInStatus: String, Codable {
+    case onTime, late, missed
+}
+
+struct CheckInRecord: Codable, Identifiable {
+    var id = UUID()
+    var date: Date
+    var latitude: Double?
+    var longitude: Double?
+    var battery: Int
+    var status: CheckInStatus
+    var mood: String
+    var note: String
+
+    var coordinate: CLLocationCoordinate2D? {
+        guard let latitude, let longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+
+    var coordinateString: String {
+        guard let latitude, let longitude else { return "No location" }
+        return String(format: "%.4f, %.4f", latitude, longitude)
+    }
+}
+
+struct ItineraryStop: Codable, Identifiable {
+    var id = UUID()
+    var city: String
+    var country: String
+    var emoji: String
+    var dates: String
+    var isCurrent: Bool
+}
+
+struct Expense: Codable, Identifiable {
+    var id = UUID()
+    var title: String
+    var emoji: String
+    var amount: Double
+    var date: Date
+}
+
+enum MemberStatus: String, Codable {
+    case good, due, alert
+}
+
+struct FamilyMember: Codable, Identifiable {
+    var id = UUID()
+    var name: String
+    var emoji: String
+    var role: String
+    var battery: Int
+    var lastSeenMinutes: Int
+    var status: MemberStatus
+    var isMe: Bool
+
+    var lastSeenString: String {
+        lastSeenMinutes <= 1 ? "now" : "\(lastSeenMinutes)m ago"
+    }
+}
+
+struct PingRequest: Codable, Identifiable {
+    var id = UUID()
+    var fromName: String
+    var sentMinutesAgo: Int
+    var isApproved: Bool
+}
+
+enum EventKind: String, Codable {
+    case checkIn, missed, ping, sos, recap
 
     var emoji: String {
         switch self {
-        case .all: "✨"
-        case .coffee: "☕️"
-        case .food: "🍜"
-        case .bars: "🍸"
-        case .parks: "🌳"
-        case .music: "🎶"
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .all: Theme.lime
-        case .coffee: Color(hex: 0xD9A066)
-        case .food: Color(hex: 0xFF8A5C)
-        case .bars: Color(hex: 0xB18CFF)
-        case .parks: Color(hex: 0x7ED98A)
-        case .music: Color(hex: 0x6FC8FF)
+        case .checkIn: "✅"
+        case .missed: "⚠️"
+        case .ping: "📍"
+        case .sos: "🆘"
+        case .recap: "📸"
         }
     }
 }
 
-struct Spot: Identifiable, Hashable {
-    let id = UUID()
-    let name: String
-    let category: SpotCategory
-    let area: String
-    let distance: String
-    let rating: Double
-    let latitude: Double
-    let longitude: Double
-    var isSaved: Bool = false
-
-    var coordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-    }
+struct ActivityEvent: Codable, Identifiable {
+    var id = UUID()
+    var kind: EventKind
+    var title: String
+    var detail: String
+    var date: Date
 }
 
-struct FriendCheckIn: Identifiable {
-    let id = UUID()
-    let friendName: String
-    let avatarEmoji: String
-    let spotName: String
-    let mood: String
-    let note: String
-    let timeAgo: String
-    let isToday: Bool
-}
+// MARK: - Seed data (demo content for first launch — no backend)
 
-struct SpotList: Identifiable {
-    let id = UUID()
-    let title: String
-    let subtitle: String
-    let emoji: String
-    let saved: Int
-    let tint: Color
-}
-
-struct Badge: Identifiable {
-    let id = UUID()
-    let name: String
-    let emoji: String
-    let earned: Bool
-}
-
-// MARK: - Mock data (frontend only — no backend wired up)
-
-enum MockData {
-    static let userName = "Samy"
-    static let homeArea = "Queen Anne, Seattle"
-    static let homeCoordinate = CLLocationCoordinate2D(latitude: 47.6324, longitude: -122.3574)
-
-    static let spots: [Spot] = [
-        Spot(name: "Salt & Straw", category: .food, area: "Queen Anne", distance: "0.3 mi", rating: 4.8,
-             latitude: 47.6293, longitude: -122.3565, isSaved: true),
-        Spot(name: "Nectar Lounge", category: .music, area: "Fremont", distance: "1.1 mi", rating: 4.5,
-             latitude: 47.6497, longitude: -122.3520, isSaved: true),
-        Spot(name: "Caffe Ladro", category: .coffee, area: "Queen Anne", distance: "0.2 mi", rating: 4.6,
-             latitude: 47.6371, longitude: -122.3571),
-        Spot(name: "Kerry Park", category: .parks, area: "Queen Anne", distance: "0.5 mi", rating: 4.9,
-             latitude: 47.6295, longitude: -122.3599, isSaved: true),
-        Spot(name: "The Masonry", category: .bars, area: "Lower QA", distance: "0.7 mi", rating: 4.4,
-             latitude: 47.6254, longitude: -122.3563),
-        Spot(name: "How to Cook a Wolf", category: .food, area: "Queen Anne", distance: "0.4 mi", rating: 4.7,
-             latitude: 47.6379, longitude: -122.3566, isSaved: true),
-        Spot(name: "Gas Works Park", category: .parks, area: "Wallingford", distance: "1.6 mi", rating: 4.8,
-             latitude: 47.6456, longitude: -122.3344),
-        Spot(name: "Anchorhead Coffee", category: .coffee, area: "Belltown", distance: "1.3 mi", rating: 4.7,
-             latitude: 47.6157, longitude: -122.3413),
+enum Seed {
+    static let parents: [ParentContact] = [
+        ParentContact(name: "Mom", relation: "Parent", emoji: "🌸"),
+        ParentContact(name: "Dad", relation: "Parent", emoji: "🧢"),
     ]
 
-    static let nearby: [Spot] = Array(spots.prefix(5))
-
-    static let checkIns: [FriendCheckIn] = [
-        FriendCheckIn(friendName: "Maya", avatarEmoji: "🦊", spotName: "Salt & Straw",
-                      mood: "🤤", note: "Honey lavender. No notes.", timeAgo: "12m", isToday: true),
-        FriendCheckIn(friendName: "Jonas", avatarEmoji: "🐻", spotName: "Nectar Lounge",
-                      mood: "🔥", note: "Show starts at 9 — come thru", timeAgo: "1h", isToday: true),
-        FriendCheckIn(friendName: "Priya", avatarEmoji: "🦋", spotName: "Kerry Park",
-                      mood: "🌅", note: "Golden hour delivered", timeAgo: "3h", isToday: true),
-        FriendCheckIn(friendName: "Leo", avatarEmoji: "🐯", spotName: "The Masonry",
-                      mood: "🍕", note: "Wood-fired everything", timeAgo: "1d", isToday: false),
-        FriendCheckIn(friendName: "Ana", avatarEmoji: "🐬", spotName: "Anchorhead Coffee",
-                      mood: "☕️", note: "Best flat white in town", timeAgo: "1d", isToday: false),
-        FriendCheckIn(friendName: "Maya", avatarEmoji: "🦊", spotName: "Gas Works Park",
-                      mood: "🪁", note: "Kite weather", timeAgo: "2d", isToday: false),
+    static let schedule: [ScheduledCheckIn] = [
+        ScheduledCheckIn(label: "Morning", hour: 9, minute: 0, isEnabled: true),
+        ScheduledCheckIn(label: "Afternoon", hour: 15, minute: 0, isEnabled: true),
+        ScheduledCheckIn(label: "Evening", hour: 21, minute: 0, isEnabled: true),
     ]
 
-    static let lists: [SpotList] = [
-        SpotList(title: "Date night", subtitle: "Dinner, drinks & a view", emoji: "🕯️", saved: 6, tint: Color(hex: 0xFFD9CE)),
-        SpotList(title: "Coffee crawl", subtitle: "Every roaster worth the walk", emoji: "☕️", saved: 9, tint: Color(hex: 0xF1E3CD)),
-        SpotList(title: "Out-of-towners", subtitle: "When friends visit Seattle", emoji: "🧭", saved: 12, tint: Color(hex: 0xD7ECFF)),
-        SpotList(title: "Live music", subtitle: "Small rooms, big sound", emoji: "🎶", saved: 4, tint: Color(hex: 0xE5DCFF)),
+    static let stops: [ItineraryStop] = [
+        ItineraryStop(city: "Lisbon", country: "Portugal", emoji: "🚋", dates: "Jun 7 – 12", isCurrent: true),
+        ItineraryStop(city: "Seville", country: "Spain", emoji: "🍊", dates: "Jun 12 – 16", isCurrent: false),
+        ItineraryStop(city: "Madrid", country: "Spain", emoji: "🖼️", dates: "Jun 16 – 20", isCurrent: false),
+        ItineraryStop(city: "Barcelona", country: "Spain", emoji: "🏖️", dates: "Jun 20 – 25", isCurrent: false),
     ]
 
-    static let badges: [Badge] = [
-        Badge(name: "First steps", emoji: "👟", earned: true),
-        Badge(name: "Regular", emoji: "📍", earned: true),
-        Badge(name: "Early bird", emoji: "🌅", earned: true),
-        Badge(name: "Night owl", emoji: "🦉", earned: true),
-        Badge(name: "Explorer", emoji: "🗺️", earned: false),
-        Badge(name: "Streak ×30", emoji: "🔥", earned: false),
+    static let expenses: [Expense] = [
+        Expense(title: "Hostel · 2 nights", emoji: "🛏️", amount: 84, date: .now.addingTimeInterval(-86400 * 2)),
+        Expense(title: "Pastéis de nata run", emoji: "🥧", amount: 9.5, date: .now.addingTimeInterval(-86400)),
+        Expense(title: "Tram day pass", emoji: "🚋", amount: 6.8, date: .now.addingTimeInterval(-3600 * 5)),
     ]
-}
 
-// MARK: - App-wide observable state
-
-@Observable
-final class AppModel {
-    var spots: [Spot] = MockData.spots
-    var totalCheckIns = 86
-    var streakDays = 12
-
-    var savedSpots: [Spot] { spots.filter(\.isSaved) }
-
-    func toggleSaved(_ spot: Spot) {
-        guard let index = spots.firstIndex(where: { $0.id == spot.id }) else { return }
-        spots[index].isSaved.toggle()
+    static func family(meName: String) -> [FamilyMember] {
+        [
+            FamilyMember(name: meName, emoji: "🎒", role: "Traveling", battery: 100,
+                         lastSeenMinutes: 0, status: .good, isMe: true),
+            FamilyMember(name: "Mom", emoji: "🌸", role: "Home", battery: 64,
+                         lastSeenMinutes: 4, status: .good, isMe: false),
+            FamilyMember(name: "Dad", emoji: "🧢", role: "Home", battery: 41,
+                         lastSeenMinutes: 18, status: .good, isMe: false),
+        ]
     }
 
-    func recordCheckIn() {
-        totalCheckIns += 1
-    }
+    static let pings: [PingRequest] = [
+        PingRequest(fromName: "Mom", sentMinutesAgo: 12, isApproved: false),
+    ]
+
+    static let records: [CheckInRecord] = [
+        CheckInRecord(date: .now.addingTimeInterval(-3600 * 20), latitude: 38.7223, longitude: -9.1393,
+                      battery: 81, status: .onTime, mood: "😌", note: "Back at the hostel"),
+        CheckInRecord(date: .now.addingTimeInterval(-3600 * 26), latitude: 38.7139, longitude: -9.1334,
+                      battery: 54, status: .onTime, mood: "🤩", note: "Alfama viewpoint"),
+    ]
+
+    static let events: [ActivityEvent] = [
+        ActivityEvent(kind: .checkIn, title: "Evening check-in", detail: "On time · 📍 attached · 🔋 81%",
+                      date: .now.addingTimeInterval(-3600 * 20)),
+        ActivityEvent(kind: .recap, title: "Daily recap sent", detail: "“Climbed every hill in Lisbon. Worth it.”",
+                      date: .now.addingTimeInterval(-3600 * 22)),
+        ActivityEvent(kind: .ping, title: "Location shared with Dad", detail: "Approved in 1 tap",
+                      date: .now.addingTimeInterval(-3600 * 30)),
+    ]
 }

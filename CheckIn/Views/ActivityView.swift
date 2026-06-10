@@ -1,31 +1,39 @@
 import SwiftUI
 
-/// Friends' check-in feed with a countdown hero card, FOTMOB-style.
+/// Timeline of everything proof-related, plus the evening recap composer.
 struct ActivityView: View {
-    @State private var pulse = false
+    @Environment(Store.self) private var store
 
-    private var todayCheckIns: [FriendCheckIn] { MockData.checkIns.filter(\.isToday) }
-    private var earlierCheckIns: [FriendCheckIn] { MockData.checkIns.filter { !$0.isToday } }
+    @State private var recapText = ""
+    @State private var recapSent = false
+    @FocusState private var recapFocused: Bool
+
+    private var todayEvents: [ActivityEvent] {
+        store.events.filter { Calendar.current.isDateInToday($0.date) }
+    }
+    private var earlierEvents: [ActivityEvent] {
+        store.events.filter { !Calendar.current.isDateInToday($0.date) }
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 24) {
                 header
                     .appearStagger(0)
-                eventCard
+                recapComposer
                     .appearStagger(1)
-                feedSection(title: "Today", items: todayCheckIns, startIndex: 2)
-                feedSection(title: "Earlier", items: earlierCheckIns, startIndex: 5)
+                if !todayEvents.isEmpty {
+                    feedSection(title: "Today", events: todayEvents, startIndex: 2)
+                }
+                if !earlierEvents.isEmpty {
+                    feedSection(title: "Earlier", events: earlierEvents, startIndex: 4)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
-        }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private var header: some View {
@@ -34,13 +42,11 @@ struct ActivityView: View {
                 .font(.display(28, weight: .bold))
                 .foregroundStyle(Theme.ink)
             Spacer()
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Theme.coral)
-                    .frame(width: 7, height: 7)
-                    .scaleEffect(pulse ? 1.25 : 0.85)
-                Text("3 friends out now")
-                    .font(.display(13, weight: .semibold))
+            HStack(spacing: 5) {
+                Text("🔥")
+                    .font(.system(size: 13))
+                Text("\(store.streakDays)-day streak")
+                    .font(.display(13, weight: .bold))
                     .foregroundStyle(Theme.ink)
             }
             .padding(.horizontal, 12)
@@ -49,103 +55,95 @@ struct ActivityView: View {
         }
     }
 
-    private var eventCard: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("UP NEXT")
-                    .font(.display(10, weight: .heavy))
-                    .foregroundStyle(Theme.ink.opacity(0.5))
-                    .kerning(1.2)
-                Text("Trivia night")
-                    .font(.display(19, weight: .bold))
-                    .foregroundStyle(Theme.ink)
-                Text("@ Nectar Lounge · Thu 8 PM")
-                    .font(.display(13, weight: .semibold))
-                    .foregroundStyle(Theme.ink.opacity(0.65))
-            }
-            .padding(18)
+    // MARK: - Daily recap
 
-            Spacer()
-
-            HStack(spacing: 14) {
-                countdownColumn(value: "1", unit: "day")
-                countdownColumn(value: "16", unit: "hrs")
-                countdownColumn(value: "3", unit: "min")
+    private var recapComposer: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                EmojiAvatar(emoji: "📸", size: 40, tint: Color(hex: 0xF1E3CD))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Evening recap")
+                        .font(.display(16, weight: .bold))
+                        .foregroundStyle(Theme.ink)
+                    Text("One line + a photo, bundled into your parents' digest")
+                        .font(.display(12, weight: .medium))
+                        .foregroundStyle(Theme.inkSecondary)
+                }
             }
-            .padding(.trailing, 20)
+
+            HStack(spacing: 10) {
+                TextField("How was today?", text: $recapText)
+                    .font(.display(15, weight: .medium))
+                    .focused($recapFocused)
+                    .padding(.horizontal, 14)
+                    .frame(height: 46)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Theme.canvas)
+                    )
+
+                Button {
+                    Haptics.tap()
+                } label: {
+                    Image(systemName: "camera")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .frame(width: 46, height: 46)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Theme.canvas)
+                        )
+                }
+                .buttonStyle(SquishyButtonStyle(scale: 0.88))
+
+                Button {
+                    sendRecap()
+                } label: {
+                    Image(systemName: recapSent ? "checkmark" : "arrow.up")
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(recapSent ? Theme.ink : .white)
+                        .frame(width: 46, height: 46)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(recapSent ? Theme.lime : Theme.ink)
+                        )
+                        .symbolEffect(.bounce, value: recapSent)
+                }
+                .buttonStyle(SquishyButtonStyle(scale: 0.88))
+                .disabled(recapText.trimmingCharacters(in: .whitespaces).isEmpty && !recapSent)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Theme.heroGradient)
-                .shadow(color: Theme.sky.opacity(0.3), radius: 14, y: 7)
-        )
+        .padding(16)
+        .card(cornerRadius: 26)
     }
 
-    private func countdownColumn(value: String, unit: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.display(22, weight: .heavy))
-                .monospacedDigit()
-                .foregroundStyle(Theme.ink)
-            Text(unit)
-                .font(.display(10, weight: .bold))
-                .foregroundStyle(Theme.ink.opacity(0.55))
+    private func sendRecap() {
+        let text = recapText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        Haptics.success()
+        store.sendRecap(text)
+        recapText = ""
+        recapFocused = false
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+            recapSent = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+            withAnimation { recapSent = false }
         }
     }
 
-    private func feedSection(title: String, items: [FriendCheckIn], startIndex: Int) -> some View {
+    // MARK: - Feed
+
+    private func feedSection(title: String, events: [ActivityEvent], startIndex: Int) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionHeader(title: title)
             VStack(spacing: 10) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, checkIn in
-                    feedRow(checkIn)
+                ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                    EventRow(event: event)
                         .appearStagger(startIndex + index)
                 }
             }
         }
-    }
-
-    private func feedRow(_ checkIn: FriendCheckIn) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            ZStack(alignment: .bottomTrailing) {
-                Circle()
-                    .fill(Theme.limeSoft)
-                    .frame(width: 48, height: 48)
-                    .overlay(Text(checkIn.avatarEmoji).font(.system(size: 22)))
-                Text(checkIn.mood)
-                    .font(.system(size: 14))
-                    .padding(2)
-                    .background(Circle().fill(.white))
-                    .offset(x: 4, y: 4)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 0) {
-                    Text(checkIn.friendName)
-                        .font(.display(15, weight: .bold))
-                    Text(" checked in at ")
-                        .font(.display(15, weight: .medium))
-                        .foregroundStyle(Theme.inkSecondary)
-                    Text(checkIn.spotName)
-                        .font(.display(15, weight: .bold))
-                }
-                .foregroundStyle(Theme.ink)
-                .lineLimit(2)
-
-                Text("“\(checkIn.note)”")
-                    .font(.display(13, weight: .medium))
-                    .foregroundStyle(Theme.inkSecondary)
-            }
-
-            Spacer()
-
-            Text(checkIn.timeAgo)
-                .font(.display(12, weight: .semibold))
-                .foregroundStyle(Theme.inkSecondary)
-        }
-        .padding(14)
-        .card(cornerRadius: 22)
     }
 }
 
@@ -154,5 +152,5 @@ struct ActivityView: View {
         Theme.canvas.ignoresSafeArea()
         ActivityView()
     }
-    .environment(AppModel())
+    .environment(Store())
 }

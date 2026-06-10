@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct RootView: View {
-    @State private var selectedTab: AppTab = .explore
+    @Environment(Store.self) private var store
+    @State private var selectedTab: AppTab = .home
     @State private var showCheckIn = false
 
     var body: some View {
@@ -10,8 +11,8 @@ struct RootView: View {
 
             Group {
                 switch selectedTab {
-                case .explore: ExploreView()
-                case .saved: SavedView()
+                case .home: HomeView()
+                case .plan: PlanView()
                 case .activity: ActivityView()
                 case .profile: ProfileView()
                 }
@@ -20,7 +21,7 @@ struct RootView: View {
             .transition(.opacity.combined(with: .scale(scale: 0.985)))
             .id(selectedTab)
 
-            FloatingTabBar(selection: $selectedTab) {
+            FloatingTabBar(selection: $selectedTab, isCheckInDue: store.dueSlot != nil) {
                 showCheckIn = true
             }
             .padding(.bottom, 4)
@@ -35,5 +36,6 @@ struct RootView: View {
 
 #Preview {
     RootView()
-        .environment(AppModel())
+        .environment(Store())
+        .environment(LocationService())
 }
